@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: comprobantes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comprobantes-validador
+  namespace: comprobantes
+spec:
+  replicas: 3  # tres pods
+  selector:
+    matchLabels:
+      app: comprobantes-validador
+  template:
+    metadata:
+      labels:
+        app: comprobantes-validador
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["comprobantes-validador"]
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: validador
+          image: comprobantes-validador:1.0.5
+          ports:
+            - containerPort: 8082
+          env:
+            - name: QUARKUS_HTTP_PORT
+              value: "8082"
+            - name: QUARKUS_KAFKA_DEVSERVICES_ENABLED
+              value: "false"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "192.168.65.3:9094"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comprobantes-validador
+  namespace: comprobantes
+spec:
+  selector:
+    app: comprobantes-validador
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: comprobantes-validador-pdb
+  namespace: comprobantes
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: comprobantes-validador
